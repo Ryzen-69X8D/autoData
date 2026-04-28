@@ -32,7 +32,9 @@ services:
     restart: on-failure
 
   airflow-webserver:
-    image: apache/airflow:2.8.1-python3.10
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -41,7 +43,6 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      _PIP_ADDITIONAL_REQUIREMENTS: yfinance pandas scikit-learn joblib
     volumes:
       - ./airflow:/opt/airflow
       - .:/opt/airflow
@@ -51,14 +52,15 @@ services:
       - 8.8.4.4
 
   airflow-scheduler:
-    image: apache/airflow:2.8.1-python3.10
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       airflow-webserver:
         condition: service_started
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-      _PIP_ADDITIONAL_REQUIREMENTS: yfinance pandas scikit-learn joblib
     volumes:
       - ./airflow:/opt/airflow
       - .:/opt/airflow
