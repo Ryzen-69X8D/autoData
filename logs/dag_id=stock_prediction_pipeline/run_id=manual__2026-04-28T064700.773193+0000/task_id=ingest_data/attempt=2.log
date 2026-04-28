@@ -1,0 +1,28 @@
+[2026-04-28T06:52:02.355+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=non-requeueable deps ti=<TaskInstance: stock_prediction_pipeline.ingest_data manual__2026-04-28T06:47:00.773193+00:00 [queued]>
+[2026-04-28T06:52:02.361+0000] {taskinstance.py:1956} INFO - Dependencies all met for dep_context=requeueable deps ti=<TaskInstance: stock_prediction_pipeline.ingest_data manual__2026-04-28T06:47:00.773193+00:00 [queued]>
+[2026-04-28T06:52:02.362+0000] {taskinstance.py:2170} INFO - Starting attempt 2 of 2
+[2026-04-28T06:52:02.372+0000] {taskinstance.py:2191} INFO - Executing <Task(BashOperator): ingest_data> on 2026-04-28 06:47:00.773193+00:00
+[2026-04-28T06:52:02.378+0000] {standard_task_runner.py:60} INFO - Started process 274 to run task
+[2026-04-28T06:52:02.380+0000] {standard_task_runner.py:87} INFO - Running: ['***', 'tasks', 'run', 'stock_prediction_pipeline', 'ingest_data', 'manual__2026-04-28T06:47:00.773193+00:00', '--job-id', '11', '--raw', '--subdir', 'DAGS_FOLDER/retrain_dag.py', '--cfg-path', '/tmp/tmpree3hd37']
+[2026-04-28T06:52:02.382+0000] {standard_task_runner.py:88} INFO - Job 11: Subtask ingest_data
+[2026-04-28T06:52:02.419+0000] {task_command.py:423} INFO - Running <TaskInstance: stock_prediction_pipeline.ingest_data manual__2026-04-28T06:47:00.773193+00:00 [running]> on host 900e928e86ef
+[2026-04-28T06:52:02.481+0000] {taskinstance.py:2480} INFO - Exporting env vars: AIRFLOW_CTX_DAG_OWNER='***' AIRFLOW_CTX_DAG_ID='stock_prediction_pipeline' AIRFLOW_CTX_TASK_ID='ingest_data' AIRFLOW_CTX_EXECUTION_DATE='2026-04-28T06:47:00.773193+00:00' AIRFLOW_CTX_TRY_NUMBER='2' AIRFLOW_CTX_DAG_RUN_ID='manual__2026-04-28T06:47:00.773193+00:00'
+[2026-04-28T06:52:02.483+0000] {subprocess.py:63} INFO - Tmp dir root location: /tmp
+[2026-04-28T06:52:02.484+0000] {subprocess.py:75} INFO - Running command: ['/usr/bin/bash', '-c', 'python /opt/***/src/ingest.py']
+[2026-04-28T06:52:02.494+0000] {subprocess.py:86} INFO - Output:
+[2026-04-28T06:52:02.530+0000] {subprocess.py:93} INFO - Traceback (most recent call last):
+[2026-04-28T06:52:02.531+0000] {subprocess.py:93} INFO -   File "/opt/***/src/ingest.py", line 1, in <module>
+[2026-04-28T06:52:02.531+0000] {subprocess.py:93} INFO -     import yfinance as yf
+[2026-04-28T06:52:02.531+0000] {subprocess.py:93} INFO - ModuleNotFoundError: No module named 'yfinance'
+[2026-04-28T06:52:02.533+0000] {subprocess.py:97} INFO - Command exited with return code 1
+[2026-04-28T06:52:02.542+0000] {taskinstance.py:2698} ERROR - Task failed with exception
+Traceback (most recent call last):
+  File "/home/airflow/.local/lib/python3.8/site-packages/airflow/models/taskinstance.py", line 433, in _execute_task
+    result = execute_callable(context=context, **execute_callable_kwargs)
+  File "/home/airflow/.local/lib/python3.8/site-packages/airflow/operators/bash.py", line 212, in execute
+    raise AirflowException(
+airflow.exceptions.AirflowException: Bash command failed. The command returned a non-zero exit code 1.
+[2026-04-28T06:52:02.544+0000] {taskinstance.py:1138} INFO - Marking task as FAILED. dag_id=stock_prediction_pipeline, task_id=ingest_data, execution_date=20260428T064700, start_date=20260428T065202, end_date=20260428T065202
+[2026-04-28T06:52:02.554+0000] {standard_task_runner.py:107} ERROR - Failed to execute job 11 for task ingest_data (Bash command failed. The command returned a non-zero exit code 1.; 274)
+[2026-04-28T06:52:02.594+0000] {local_task_job_runner.py:234} INFO - Task exited with return code 1
+[2026-04-28T06:52:02.617+0000] {taskinstance.py:3280} INFO - 0 downstream tasks scheduled from follow-on schedule check
