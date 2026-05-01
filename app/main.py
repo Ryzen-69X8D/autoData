@@ -1,11 +1,3 @@
-"""
-FastAPI Stock Prediction Service
-=================================
-Loads the trained RandomForest model **and** the MinMaxScaler used during
-training, so incoming raw OHLCV values are scaled consistently before
-prediction — fixing the silent data-mismatch bug in the original code.
-"""
-
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 import joblib
@@ -16,14 +8,17 @@ import os
 app = FastAPI(
     title="Stock Prediction API (Indian Market)",
     description="Predicts next-day Close price for Indian NSE stocks.",
-    version="2.0.0",
+    version="2.1.0",
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-MODEL_PATH  = "/opt/airflow/models/random_forest.pkl"
-SCALER_PATH = "/opt/airflow/models/scaler.pkl"
+# Defaults to the local 'models' folder if the environment variable isn't set
+MODEL_DIR = os.getenv("MODEL_DIR", "./models") 
 
-# Feature order must match preprocess.FEATURE_COLS exactly
+model_path = os.path.join(MODEL_DIR, "random_forest.pkl")
+scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
+
+# Feature order must match exactly what the model and scaler were trained on
 FEATURE_COLS = ["Open", "High", "Low", "Close", "Volume", "SMA_10", "SMA_50", "Daily_Return"]
 
 model  = None
@@ -35,17 +30,17 @@ scaler = None
 def load_artifacts():
     global model, scaler
 
-    if os.path.exists(MODEL_PATH):
-        model = joblib.load(MODEL_PATH)
-        print(f"✅  Model loaded from {MODEL_PATH}")
+    if os.path.exists(model_path):
+        model = joblib.load(model_path)
+        print(f"✅  Model loaded from {model_path}")
     else:
-        print(f"⚠️   Model not found at {MODEL_PATH}. Run the pipeline first.")
+        print(f"⚠️   Model not found at {model_path}. Run the pipeline first.")
 
-    if os.path.exists(SCALER_PATH):
-        scaler = joblib.load(SCALER_PATH)
-        print(f"✅  Scaler loaded from {SCALER_PATH}")
+    if os.path.exists(scaler_path):
+        scaler = joblib.load(scaler_path)
+        print(f"✅  Scaler loaded from {scaler_path}")
     else:
-        print(f"⚠️   Scaler not found at {SCALER_PATH}.")
+        print(f"⚠️   Scaler not found at {scaler_path}.")
 
 
 # ── Request schema ────────────────────────────────────────────────────────────
@@ -53,7 +48,7 @@ class StockFeatures(BaseModel):
     """
     Raw (un-scaled) OHLCV values for a single trading day.
     SMA_10, SMA_50, Daily_Return are optional; if omitted they are
-    approximated from the OHLCV inputs so the API is easy to call.
+    approximated from the OHLCV inputs.
     """
     Open:         float = Field(..., example=2800.0)
     High:         float = Field(..., example=2850.0)
@@ -67,7 +62,19 @@ class StockFeatures(BaseModel):
 
 class PredictionResponse(BaseModel):
     predicted_close_scaled: float
+    predicted_close_price: float
+    currency: str
     note: str
+
+
+# ── Root endpoint ─────────────────────────────────────────────────────────────
+@app.get("/")
+def read_root():
+    return {
+        "status": "online",
+        "api_name": "Stock Prediction API (Indian Market)",
+        "message": "Welcome! The API is running successfully. Visit /docs to view the interactive documentation and test the model."
+    }
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
@@ -83,11 +90,11 @@ def health():
 @app.post("/predict", response_model=PredictionResponse)
 def predict_stock(features: StockFeatures):
     if model is None:
-        raise HTTPException(status_code=503, detail="Model is unavailable. Run the training pipeline first.")
+        raise HTTPException(status_code=503, detail="Model is unavailable.")
     if scaler is None:
-        raise HTTPException(status_code=503, detail="Scaler is unavailable. Run the preprocessing step first.")
+        raise HTTPException(status_code=503, detail="Scaler is unavailable.")
 
-    # ── FIX: Fill optional technical indicators if not provided ───────────────
+    # Fill optional technical indicators if not provided
     sma_10       = features.SMA_10       if features.SMA_10       is not None else features.Close
     sma_50       = features.SMA_50       if features.SMA_50       is not None else features.Close
     daily_return = features.Daily_Return if features.Daily_Return is not None else 0.0
@@ -104,17 +111,30 @@ def predict_stock(features: StockFeatures):
         "Daily_Return": daily_return,
     }], columns=FEATURE_COLS)
 
-    # ── FIX: Scale inputs using the same scaler used in training ──────────────
-    scaled = scaler.transform(raw_df)
-    scaled_df = pd.DataFrame(scaled, columns=FEATURE_COLS)
+    # Scale inputs
+    scaled_data = scaler.transform(raw_df)
+    scaled_df = pd.DataFrame(scaled_data, columns=FEATURE_COLS)
 
-    prediction = float(model.predict(scaled_df)[0])
+    # Get the raw prediction (which is in the scaled 0-1 format)
+    scaled_prediction = float(model.predict(scaled_df)[0])
+
+    # ── Inverse Transform to get the real price ───────────────────────────────
+    # Create a dummy array with the exact same shape as the scaler expects (1 row, 8 columns)
+    dummy_array = np.zeros((1, len(FEATURE_COLS)))
+    
+    # Find the index of the "Close" column and insert our predicted value there
+    close_index = FEATURE_COLS.index("Close")
+    dummy_array[0, close_index] = scaled_prediction
+    
+    # Reverse the scaling for the entire dummy array
+    inversed_array = scaler.inverse_transform(dummy_array)
+    
+    # Extract the actual unscaled price from the "Close" column
+    actual_price = float(inversed_array[0, close_index])
 
     return PredictionResponse(
-        predicted_close_scaled=round(prediction, 6),
-        note=(
-            "Prediction is in MinMaxScaler space [0,1]. "
-            "The value represents tomorrow's relative Close price. "
-            "Higher = relatively higher next-day close."
-        ),
+        predicted_close_scaled=round(scaled_prediction, 6),
+        predicted_close_price=round(actual_price, 2),
+        currency="INR",
+        note="The API now returns both the raw scaled output and the actual predicted price in Indian Rupees."
     )
