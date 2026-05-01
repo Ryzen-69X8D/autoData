@@ -38,12 +38,12 @@ def fetch_stock_data(ticker: str, start_date: str, end_date: str, output_path: s
         return pd.DataFrame()
 
 if __name__ == "__main__":
-    TICKER = "AAPL"
+    TICKER = "RELIANCE.NS" 
     START_DATE = "2020-01-01"
-    END_DATE = "2024-01-01"
-    
-    OUTPUT_FILE = "../data/raw/stock_data.csv"
-    
+    END_DATE = "2024-01-01" 
+         
+    OUTPUT_FILE = "/opt/airflow/data/raw/stock_data.csv"
+         
     df = fetch_stock_data(TICKER, START_DATE, END_DATE, OUTPUT_FILE)
     
     if not df.empty:
