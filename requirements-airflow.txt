@@ -2,4 +2,4 @@ yfinance
 pandas
 scikit-learn
 joblib
-cffi<2.0.0
+cffi
