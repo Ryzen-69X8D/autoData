@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 models/*.pkl
 data/processed/
+logs/
