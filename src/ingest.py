@@ -47,7 +47,7 @@ def fetch_stock_data(
         stock_data.rename(columns={'Shares Traded': 'Volume'}, inplace=True)
         
         # 4. Convert Date and sort chronologically
-        stock_data['Date'] = pd.to_datetime(stock_data['Date'])
+        stock_data['Date'] = pd.to_datetime(stock_data['Date'], format="%d-%b-%Y")
         stock_data = stock_data.sort_values('Date').reset_index(drop=True)
 
         # 5. Filter by the requested date range (Mimics yfinance start/end dates)

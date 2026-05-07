@@ -1,0 +1,7 @@
+logs/
+data/
+models/
+__pycache__/
+*.pyc
+.idea/
+.git/

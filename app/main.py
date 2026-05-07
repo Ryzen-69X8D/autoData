@@ -7,25 +7,21 @@ import os
 
 app = FastAPI(
     title="Stock Prediction API (Indian Market)",
-    description="Predicts next-day Close price for Indian NSE stocks.",
-    version="2.1.0",
+    description="Predicts next-day Close price based on Daily Return forecasting.",
+    version="2.2.0",
 )
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-# Defaults to the local 'models' folder if the environment variable isn't set
 MODEL_DIR = os.getenv("MODEL_DIR", "./models") 
-
 model_path = os.path.join(MODEL_DIR, "random_forest.pkl")
 scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
 
-# Feature order must match exactly what the model and scaler were trained on
 FEATURE_COLS = ["Open", "High", "Low", "Close", "Volume", "SMA_10", "SMA_50", "Daily_Return"]
 
 model  = None
 scaler = None
 
 
-# ── Startup: load model + scaler ──────────────────────────────────────────────
 @app.on_event("startup")
 def load_artifacts():
     global model, scaler
@@ -43,13 +39,7 @@ def load_artifacts():
         print(f"⚠️   Scaler not found at {scaler_path}.")
 
 
-# ── Request schema ────────────────────────────────────────────────────────────
 class StockFeatures(BaseModel):
-    """
-    Raw (un-scaled) OHLCV values for a single trading day.
-    SMA_10, SMA_50, Daily_Return are optional; if omitted they are
-    approximated from the OHLCV inputs.
-    """
     Open:         float = Field(..., example=2800.0)
     High:         float = Field(..., example=2850.0)
     Low:          float = Field(..., example=2760.0)
@@ -61,23 +51,21 @@ class StockFeatures(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    predicted_close_scaled: float
+    predicted_return_percentage: float
     predicted_close_price: float
     currency: str
     note: str
 
 
-# ── Root endpoint ─────────────────────────────────────────────────────────────
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "api_name": "Stock Prediction API (Indian Market)",
-        "message": "Welcome! The API is running successfully. Visit /docs to view the interactive documentation and test the model."
+        "api_name": "Stock Prediction API (Returns Based)",
+        "message": "Welcome! Visit /docs to view the interactive documentation."
     }
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/health")
 def health():
     return {
@@ -86,7 +74,6 @@ def health():
     }
 
 
-# ── Prediction endpoint ───────────────────────────────────────────────────────
 @app.post("/predict", response_model=PredictionResponse)
 def predict_stock(features: StockFeatures):
     if model is None:
@@ -99,7 +86,6 @@ def predict_stock(features: StockFeatures):
     sma_50       = features.SMA_50       if features.SMA_50       is not None else features.Close
     daily_return = features.Daily_Return if features.Daily_Return is not None else 0.0
 
-    # Build a DataFrame with the same column order as training
     raw_df = pd.DataFrame([{
         "Open":         features.Open,
         "High":         features.High,
@@ -115,26 +101,26 @@ def predict_stock(features: StockFeatures):
     scaled_data = scaler.transform(raw_df)
     scaled_df = pd.DataFrame(scaled_data, columns=FEATURE_COLS)
 
-    # Get the raw prediction (which is in the scaled 0-1 format)
+    # The prediction is now the scaled "Daily_Return"
     scaled_prediction = float(model.predict(scaled_df)[0])
 
-    # ── Inverse Transform to get the real price ───────────────────────────────
-    # Create a dummy array with the exact same shape as the scaler expects (1 row, 8 columns)
+    # ── Inverse Transform to get the real percentage return ───────────────────
     dummy_array = np.zeros((1, len(FEATURE_COLS)))
     
-    # Find the index of the "Close" column and insert our predicted value there
-    close_index = FEATURE_COLS.index("Close")
-    dummy_array[0, close_index] = scaled_prediction
+    # We unscale based on the Daily_Return index, not the Close index
+    return_index = FEATURE_COLS.index("Daily_Return")
+    dummy_array[0, return_index] = scaled_prediction
     
-    # Reverse the scaling for the entire dummy array
     inversed_array = scaler.inverse_transform(dummy_array)
-    
-    # Extract the actual unscaled price from the "Close" column
-    actual_price = float(inversed_array[0, close_index])
+    actual_return = float(inversed_array[0, return_index])
+
+    # ── Calculate Actual Future Price ─────────────────────────────────────────
+    # Price = Current Close * (1 + predicted percentage change)
+    actual_price = features.Close * (1 + actual_return)
 
     return PredictionResponse(
-        predicted_close_scaled=round(scaled_prediction, 6),
+        predicted_return_percentage=round(actual_return * 100, 4), # e.g. 1.25%
         predicted_close_price=round(actual_price, 2),
         currency="INR",
-        note="The API now returns both the raw scaled output and the actual predicted price in Indian Rupees."
+        note=f"Model predicts a {round(actual_return * 100, 2)}% move from the input Close price."
     )

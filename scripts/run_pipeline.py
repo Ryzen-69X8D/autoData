@@ -73,8 +73,8 @@ def run(ticker: str, start: str, end: str):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the stock prediction pipeline locally.")
-    parser.add_argument("--ticker", default="RELIANCE.NS",
-                        help="Yahoo Finance ticker (e.g. RELIANCE.NS, TCS.NS, INFY.NS)")
+    parser.add_argument("--ticker", default="NIFTY_50",
+                        help="The index or ticker being predicted")
     parser.add_argument("--start",  default="2020-01-01", help="Start date YYYY-MM-DD")
     parser.add_argument("--end",    default="2024-12-31", help="End date   YYYY-MM-DD")
     args = parser.parse_args()

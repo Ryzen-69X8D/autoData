@@ -27,7 +27,8 @@ def evaluate_model(
         df = df.drop(columns=["Date"])
     df = df.select_dtypes(include=[np.number])
 
-    df["Target"] = df["Close"].shift(-1)
+    # ── FIX: Evaluate against Daily_Return, matching train.py ─────────────
+    df["Target"] = df["Daily_Return"].shift(-1)
     df.dropna(inplace=True)
 
     available_features = [c for c in FEATURE_COLS if c in df.columns]
@@ -82,7 +83,7 @@ def is_new_model_better(new_metrics_path: str, deployed_metrics_path: str) -> bo
 # ── Standalone execution ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     evaluate_model(
-        model_path          = "/opt/airflow/models/random_forest.pkl",
-        data_path           = "/opt/airflow/data/processed/processed_data.csv",
-        metrics_output_path = "/opt/airflow/models/eval_metrics.json",
+        model_path          = os.path.join(os.path.dirname(__file__), "..", "models", "random_forest.pkl"),
+        data_path           = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "processed_data.csv"),
+        metrics_output_path = os.path.join(os.path.dirname(__file__), "..", "models", "eval_metrics.json"),
     )

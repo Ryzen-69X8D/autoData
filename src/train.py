@@ -16,11 +16,7 @@ def train_model(
     metrics_path: str = None,
 ) -> float:
     """
-    Trains a RandomForestRegressor to predict the *next day's scaled Close price*.
-
-    FIX 1 – 'Date' column explicitly dropped (safety guard if it slipped through).
-    FIX 2 – n_jobs=-1 uses all CPU cores → much faster on a 32 GB machine.
-    FIX 3 – Metrics (RMSE, MAE, R²) written to JSON for the evaluate/deploy step.
+    Trains a RandomForestRegressor to predict the *next day's scaled Daily Return*.
     """
     df = pd.read_csv(input_path)
 
@@ -29,8 +25,8 @@ def train_model(
         df = df.drop(columns=["Date"])
     df = df.select_dtypes(include=[np.number])
 
-    # Target: next day's Close (already scaled, same units as features)
-    df["Target"] = df["Close"].shift(-1)
+    # ── NEW TARGET: Predict percentage change instead of absolute price ──────
+    df["Target"] = df["Daily_Return"].shift(-1)
     df.dropna(inplace=True)
 
     available_features = [c for c in FEATURE_COLS if c in df.columns]
@@ -41,13 +37,13 @@ def train_model(
         X, y, test_size=0.2, random_state=42, shuffle=False   # time-series order
     )
 
-    # ── FIX 2: n_jobs=-1 for 32 GB / multi-core system ───────────────────────
+    # ── FIX 2: n_jobs=-1 for multi-core system ───────────────────────────────
     model = RandomForestRegressor(
         n_estimators=200,
         max_depth=15,
         min_samples_leaf=2,
         random_state=42,
-        n_jobs=-1,         # use all available cores
+        n_jobs=-1,         
     )
     model.fit(X_train, y_train)
 
@@ -82,8 +78,8 @@ def train_model(
 
 # ── Standalone execution ──────────────────────────────────────────────────────
 if __name__ == "__main__":
-    INPUT_FILE    = "/opt/airflow/data/processed/processed_data.csv"
-    MODEL_OUTPUT  = "/opt/airflow/models/random_forest.pkl"
-    METRICS_PATH  = "/opt/airflow/models/metrics.json"
+    INPUT_FILE    = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "processed_data.csv")
+    MODEL_OUTPUT  = os.path.join(os.path.dirname(__file__), "..", "models", "random_forest.pkl")
+    METRICS_PATH  = os.path.join(os.path.dirname(__file__), "..", "models", "metrics.json")
 
     train_model(INPUT_FILE, MODEL_OUTPUT, METRICS_PATH)
