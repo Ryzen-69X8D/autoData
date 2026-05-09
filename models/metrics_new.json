@@ -1,6 +1,20 @@
 {
-  "rmse": 0.0413772446916823,
-  "mae": 0.029972353685638137,
-  "r2": -0.021197347396173294,
-  "test_samples": 239
+  "rmse": 0.040447256073823455,
+  "mae": 0.02838665940729104,
+  "r2": 0.02419133129861395,
+  "train_samples": 953,
+  "test_samples": 239,
+  "features": [
+    "Open",
+    "High",
+    "Low",
+    "Close",
+    "Volume",
+    "SMA_10",
+    "SMA_50",
+    "Daily_Return",
+    "MACD",
+    "MACD_Signal",
+    "RSI_14"
+  ]
 }
