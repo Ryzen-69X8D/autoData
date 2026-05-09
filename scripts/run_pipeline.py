@@ -26,8 +26,8 @@ from deploy     import deploy_model
 # ── Default paths (local layout, not Docker paths) ────────────────────────────
 RAW_DATA_PATH       = "data/raw/stock_data.csv"
 PROCESSED_DATA_PATH = "data/processed/processed_data.csv"
-MODEL_NEW_PATH      = "models/random_forest_new.pkl"
-MODEL_PROD_PATH     = "models/random_forest.pkl"
+MODEL_NEW_PATH      = "models/lstm_model_new.pt"
+MODEL_PROD_PATH     = "models/lstm_model.pt"
 SCALER_PATH         = "models/scaler.pkl"
 METRICS_NEW_PATH    = "models/metrics_new.json"
 METRICS_PROD_PATH   = "models/metrics_deployed.json"
