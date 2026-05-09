@@ -14,14 +14,15 @@ from preprocess import FEATURE_COLS
 
 SEQ_LENGTH = 14
 
+# ── SHRUNK ARCHITECTURE TO PREVENT OVERFITTING ──
 class StockLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size=128, num_layers=2):
+    def __init__(self, input_size, hidden_size=32, num_layers=1):
         super().__init__()
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=0.2)
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size, 64),
+            nn.Linear(hidden_size, 16),
             nn.ReLU(),
-            nn.Linear(64, 1)
+            nn.Linear(16, 1)
         )
 
     def forward(self, x):
@@ -75,16 +76,19 @@ def train_ensemble(input_path: str, model_dir: str, metrics_path: str):
     os.makedirs(model_dir, exist_ok=True)
     torch.save(lstm_model.state_dict(), os.path.join(model_dir, "lstm_model.pt"))
 
-    # 2. Train XGBoost (GPU Accelerated)
+    # 2. Train XGBoost (GPU Accelerated with Regularization)
     print("🚀 Training XGBoost on GPU...")
-    xgb_model = XGBRegressor(n_estimators=300, max_depth=6, learning_rate=0.05, 
-                             tree_method="hist", device="cuda" if torch.cuda.is_available() else "cpu")
+    xgb_model = XGBRegressor(
+        n_estimators=150, max_depth=4, learning_rate=0.05, 
+        tree_method="hist", device="cuda" if torch.cuda.is_available() else "cpu",
+        reg_lambda=1.5, reg_alpha=0.1
+    )
     xgb_model.fit(X_flat[:split], y_flat[:split])
     xgb_model.save_model(os.path.join(model_dir, "xgb_model.json"))
 
-    # 3. Train Random Forest (CPU Multi-core)
+    # 3. Train Random Forest (CPU Multi-core, Shrunk)
     print("🚀 Training Random Forest on CPU (All Cores)...")
-    rf_model = RandomForestRegressor(n_estimators=300, max_depth=10, n_jobs=-1, random_state=42)
+    rf_model = RandomForestRegressor(n_estimators=150, max_depth=6, n_jobs=-1, random_state=42)
     rf_model.fit(X_flat[:split], y_flat[:split])
     joblib.dump(rf_model, os.path.join(model_dir, "rf_model.pkl"))
 

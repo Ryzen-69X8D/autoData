@@ -3,13 +3,28 @@ import joblib
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 from xgboost import XGBRegressor
 
-from src.train import StockLSTM
 from src.preprocess import FEATURE_COLS
 
 _PROD_DIR = os.path.join(os.path.dirname(__file__), "..", "models", "prod")
 _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# ── SHRUNK ARCHITECTURE TO PREVENT OVERFITTING ──
+class StockLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size=32, num_layers=1):
+        super().__init__()
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_size, 16),
+            nn.ReLU(),
+            nn.Linear(16, 1)
+        )
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        return self.fc(out[:, -1, :])
 
 class ArtefactState:
     lstm_model = None
@@ -24,7 +39,7 @@ def load_artefacts():
         state.scaler = joblib.load(os.path.join(_PROD_DIR, "scaler.pkl"))
         
         state.lstm_model = StockLSTM(input_size=len(FEATURE_COLS)).to(_device)
-        state.lstm_model.load_state_dict(torch.load(os.path.join(_PROD_DIR, "lstm_model.pt"), map_location=_device))
+        state.lstm_model.load_state_dict(torch.load(os.path.join(_PROD_DIR, "lstm_model.pt"), map_location=_device, weights_only=True))
         state.lstm_model.eval()
 
         state.xgb_model = XGBRegressor()
