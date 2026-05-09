@@ -20,6 +20,7 @@ x-airflow-common: &airflow-common
     - ./data:/opt/airflow/data
     - ./models:/opt/airflow/models
     - ./logs:/opt/airflow/logs
+    - ./scripts:/opt/airflow/scripts  
   dns:
     - 8.8.8.8
     - 8.8.4.4
@@ -87,7 +88,6 @@ services:
         condition: service_started
 
   # ── FastAPI Prediction Service ─────────────────────────────────────────────
-  # FIX: This service was completely missing from the original docker-compose.
   fastapi:
     build:
       context: .
@@ -97,6 +97,7 @@ services:
     volumes:
       # Share the models directory so FastAPI sees newly deployed models
       - ./models:/opt/airflow/models
+      - ./data:/opt/airflow/data      # <--- ALSO ADDED THIS so FastAPI can read historical data for the LSTM
     environment:
       MODEL_PATH:  /opt/airflow/models/random_forest.pkl
       SCALER_PATH: /opt/airflow/models/scaler.pkl
@@ -110,7 +111,6 @@ services:
       interval: 30s
       timeout:  10s
       retries:  3
-    # Start after Airflow so a model has a chance to exist
     depends_on:
       - airflow-scheduler
 
