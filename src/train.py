@@ -1,13 +1,13 @@
 import pandas as pd
 import numpy as np
-from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from xgboost import XGBRegressor  # ── Swapped to XGBoost
 import joblib
 import json
 import os
 
-from preprocess import FEATURE_COLS   # reuse the single source-of-truth list
+from preprocess import FEATURE_COLS   
 
 
 def train_model(
@@ -16,16 +16,17 @@ def train_model(
     metrics_path: str = None,
 ) -> float:
     """
-    Trains a RandomForestRegressor to predict the *next day's scaled Daily Return*.
+    Trains an XGBoost model to predict the next day's scaled Daily Return.
+    GPU Accelerated via CUDA.
     """
     df = pd.read_csv(input_path)
 
-    # ── FIX 1: Remove any non-feature columns ────────────────────────────────
+    # ── Remove any non-feature columns
     if "Date" in df.columns:
         df = df.drop(columns=["Date"])
     df = df.select_dtypes(include=[np.number])
 
-    # ── NEW TARGET: Predict percentage change instead of absolute price ──────
+    # ── Predict percentage change
     df["Target"] = df["Daily_Return"].shift(-1)
     df.dropna(inplace=True)
 
@@ -34,16 +35,20 @@ def train_model(
     y = df["Target"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, shuffle=False   # time-series order
+        X, y, test_size=0.2, random_state=42, shuffle=False
     )
 
-    # ── FIX 2: n_jobs=-1 for multi-core system ───────────────────────────────
-    model = RandomForestRegressor(
-        n_estimators=200,
-        max_depth=15,
-        min_samples_leaf=2,
+    # ── HARDWARE MAXIMIZATION: Ryzen 7 + RTX 5050 (8GB) + 32GB RAM ──
+    model = XGBRegressor(
+        n_estimators=2000,       # Pushing 2000 trees using GPU parallelization
+        max_depth=12,            # Deep enough to catch complex market trends
+        learning_rate=0.01,      # Slow learning rate for higher accuracy
+        subsample=0.8,           # Uses 80% of data per tree to prevent overfitting
+        colsample_bytree=0.8,    # Uses 80% of features per tree to reduce bias
         random_state=42,
-        n_jobs=-1,         
+        tree_method="hist",      # Fastest algorithm for building trees
+        device="cuda",           # 🔥 Routes math to RTX 5050 GPU
+        n_jobs=-1                # 🔥 Routes data processing to Ryzen 7 CPU threads
     )
     model.fit(X_train, y_train)
 
@@ -54,11 +59,12 @@ def train_model(
 
     print(f"Training complete → RMSE: {rmse:.6f} | MAE: {mae:.6f} | R²: {r2:.4f}")
 
+    # Note: We still save it as 'random_forest.pkl' so we don't have to rewrite API/Airflow code!
     os.makedirs(os.path.dirname(model_output_path), exist_ok=True)
     joblib.dump(model, model_output_path)
     print(f"✅  Model saved → {model_output_path}")
 
-    # ── FIX 3: Persist metrics ────────────────────────────────────────────────
+    # ── Persist metrics
     metrics = {
         "rmse": rmse,
         "mae": mae,
@@ -80,6 +86,6 @@ def train_model(
 if __name__ == "__main__":
     INPUT_FILE    = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "processed_data.csv")
     MODEL_OUTPUT  = os.path.join(os.path.dirname(__file__), "..", "models", "random_forest.pkl")
-    METRICS_PATH  = os.path.join(os.path.dirname(__file__), "..", "models", "metrics.json")
+    METRICS_PATH  = os.path.join(os.path.dirname(__file__), "..", "models", "metrics_new.json") # Updated to output to metrics_new so evaluate.py doesn't overwrite it
 
     train_model(INPUT_FILE, MODEL_OUTPUT, METRICS_PATH)

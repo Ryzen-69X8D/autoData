@@ -3,3 +3,4 @@ pandas
 scikit-learn
 joblib
 cffi
+xgboost>=2.0.0

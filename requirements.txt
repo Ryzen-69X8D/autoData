@@ -9,3 +9,4 @@ pydantic
 
 apache-airflow
 psycopg2-binary
+xgboost>=2.0.0
