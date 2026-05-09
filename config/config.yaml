@@ -1,0 +1,169 @@
+# =============================================================================
+#  config.yaml — Central configuration for the Stock Prediction MLOps pipeline
+#
+#  All paths are relative to the project root unless they start with /.
+#  Environment variables written as ${VAR_NAME} are expanded at runtime
+#  by src/utils.py::load_config().
+# =============================================================================
+
+# ── Project metadata ──────────────────────────────────────────────────────────
+project:
+  name: "autoData — NSE Stock Prediction Pipeline"
+  version: "1.0.0"
+  author: "Akash Kundu"
+  description: >
+    End-to-end MLOps pipeline for Indian NSE stock / index prediction
+    with scheduled Airflow retraining and FastAPI serving.
+
+
+# ── Data ingestion ────────────────────────────────────────────────────────────
+data:
+  # Primary data source: local CSV files (yfinance fallback commented out)
+  source: "local_csv"                    # "local_csv" | "yfinance"
+  nifty_csv_dir: "data/nifty_csvs"
+
+  # Default ticker and date window used by run_pipeline.py / Airflow DAG
+  default_ticker: "NIFTY_50"
+  start_date:     "2020-01-01"
+  end_date:       "2024-12-31"
+
+  # Supported NSE tickers (used for validation and docs)
+  supported_tickers:
+    - "RELIANCE.NS"
+    - "TCS.NS"
+    - "INFY.NS"
+    - "HDFCBANK.NS"
+    - "WIPRO.NS"
+    - "ICICIBANK.NS"
+    - "SBIN.NS"
+    - "BAJFINANCE.NS"
+    - "NIFTY_50"
+
+  # File paths (relative to project root)
+  raw_path:       "data/raw/stock_data.csv"
+  processed_path: "data/processed/processed_data.csv"
+
+
+# ── Feature engineering ───────────────────────────────────────────────────────
+features:
+  # Columns fed to the model (order matters — must match scaler fit order)
+  columns:
+    - "Open"
+    - "High"
+    - "Low"
+    - "Close"
+    - "Volume"
+    - "SMA_10"
+    - "SMA_50"
+    - "Daily_Return"
+
+  # Optional extended indicators (set enabled: true to include in training)
+  optional:
+    RSI_14:       {enabled: false, window: 14}
+    BB_width:     {enabled: false, window: 20, sigma: 2}
+    Volatility_10:{enabled: false, window: 10}
+
+  # Target column derived inside train.py
+  target: "Daily_Return"      # next-day Daily_Return (shifted by -1)
+  target_shift: -1
+
+
+# ── Preprocessing ─────────────────────────────────────────────────────────────
+preprocessing:
+  scaler: "MinMaxScaler"      # only MinMaxScaler currently supported
+  scaler_path: "models/scaler.pkl"
+  drop_na: true
+
+
+# ── Model training ────────────────────────────────────────────────────────────
+training:
+  algorithm: "RandomForestRegressor"
+  test_size: 0.20              # 80/20 temporal split
+  shuffle:   false             # preserve time-series order
+  random_state: 42
+
+  hyperparameters:
+    n_estimators:    200
+    max_depth:       15
+    min_samples_leaf: 2
+    n_jobs:          -1        # use all available CPU cores
+
+  # Where to save the freshly trained (candidate) model
+  model_new_path:  "models/random_forest_new.pkl"
+  metrics_new_path: "models/metrics_new.json"
+
+
+# ── Model evaluation ──────────────────────────────────────────────────────────
+evaluation:
+  primary_metric: "rmse"      # metric used for deploy/keep decision
+  lower_is_better: true
+  metrics_deployed_path: "models/metrics_deployed.json"
+
+
+# ── Model deployment ──────────────────────────────────────────────────────────
+deployment:
+  model_prod_path:  "models/random_forest.pkl"
+  strategy: "better_rmse"     # "always" | "better_rmse"
+  # If strategy == "always", the new model is always promoted.
+  # If strategy == "better_rmse", new RMSE must be strictly less.
+
+
+# ── FastAPI service ───────────────────────────────────────────────────────────
+api:
+  host:  "0.0.0.0"
+  port:  8000
+  reload: true                # set false in production
+  title: "Stock Prediction API (Indian NSE)"
+  version: "2.2.0"
+  description: >
+    Predicts next-day Close price for NSE stocks/indices using
+    a RandomForest model trained on OHLCV + technical indicators.
+
+  # Confidence band half-width (fraction of predicted close)
+  confidence_half_width: 0.015   # ±1.5%
+
+  # CORS — restrict in production
+  cors:
+    enabled: true
+    allow_origins: ["*"]
+    allow_methods: ["GET", "POST"]
+    allow_headers: ["*"]
+
+  # Rate limiting (requests per minute per IP) — stub; implement with slowapi
+  rate_limit:
+    enabled: false
+    requests_per_minute: 60
+
+
+# ── Airflow DAG ───────────────────────────────────────────────────────────────
+airflow:
+  dag_id:           "stock_prediction_pipeline"
+  schedule:         "@daily"          # cron or preset
+  catchup:          false
+  retries:          1
+  retry_delay_min:  5
+  start_date:       "2026-04-26"
+
+  # Paths used inside the Docker container
+  src_dir:          "/opt/airflow/src"
+  data_dir:         "/opt/airflow/data"
+  models_dir:       "/opt/airflow/models"
+
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  level: "INFO"               # DEBUG | INFO | WARNING | ERROR
+  format: "[%(asctime)s] %(levelname)-8s %(name)s — %(message)s"
+  datefmt: "%Y-%m-%d %H:%M:%S"
+
+
+# ── Notifications (optional) ──────────────────────────────────────────────────
+notifications:
+  enabled: false
+  channel: "log"              # "log" | "slack" | "email"
+  slack_webhook_env: "SLACK_WEBHOOK_URL"   # env var that holds the URL
+  email:
+    smtp_host: "localhost"
+    smtp_port: 25
+    from_addr: "pipeline@autodata.local"
+    to_addrs:  []
