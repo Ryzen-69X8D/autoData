@@ -48,17 +48,19 @@ services:
   # ── Airflow DB init + admin user creation ──────────────────────────────────
   airflow-init:
     <<: *airflow-common
-    command: >
-      bash -c "
-        airflow db init &&
-        airflow users create
-          --username admin
-          --password admin
-          --firstname Akash
-          --lastname  Kundu
-          --role      Admin
-          --email     akashkundu1152@gmail.com
-      "
+    command:
+      - bash
+      - -c
+      - |
+          airflow db migrate && \
+          airflow users create \
+            --username admin \
+            --password admin \
+            --firstname Akash \
+            --lastname Kundu \
+            --role Admin \
+            --email akashkundu1152@gmail.com
+            
     restart: on-failure
 
   # ── Airflow Webserver ──────────────────────────────────────────────────────
