@@ -4,3 +4,4 @@ scikit-learn
 joblib
 cffi
 xgboost>=2.0.0
+torch>=2.2.0
