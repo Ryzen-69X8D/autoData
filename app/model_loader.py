@@ -21,19 +21,15 @@ state = ArtefactState()
 
 def load_artefacts():
     try:
-        # Load Scaler
         state.scaler = joblib.load(os.path.join(_PROD_DIR, "scaler.pkl"))
         
-        # Load LSTM
         state.lstm_model = StockLSTM(input_size=len(FEATURE_COLS)).to(_device)
         state.lstm_model.load_state_dict(torch.load(os.path.join(_PROD_DIR, "lstm_model.pt"), map_location=_device))
         state.lstm_model.eval()
 
-        # Load XGBoost
         state.xgb_model = XGBRegressor()
         state.xgb_model.load_model(os.path.join(_PROD_DIR, "xgb_model.json"))
 
-        # Load Random Forest
         state.rf_model = joblib.load(os.path.join(_PROD_DIR, "rf_model.pkl"))
         
         print("✅ Production Ensemble Loaded Successfully")
@@ -45,11 +41,17 @@ def load_artefacts():
 def is_ready():
     return all(m is not None for m in [state.lstm_model, state.xgb_model, state.rf_model, state.scaler])
 
+def build_feature_frame(**kwargs) -> pd.DataFrame:
+    """Dynamically builds the frame based on provided kwargs."""
+    row = {}
+    for col in FEATURE_COLS:
+        row[col] = kwargs.get(col) or kwargs.get(col.lower()) or 0.0
+    return pd.DataFrame([row], columns=FEATURE_COLS)
+
 def scale_features(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(state.scaler.transform(df[FEATURE_COLS]), columns=FEATURE_COLS)
 
 def predict_return(scaled_history_df: pd.DataFrame) -> float:
-    """Expects a DataFrame of history to generate LSTM sequences, but predicts next step."""
     flat_latest = scaled_history_df.iloc[-1:].values
     seq_latest = torch.FloatTensor(scaled_history_df.values).unsqueeze(0).to(_device)
 
@@ -59,7 +61,6 @@ def predict_return(scaled_history_df: pd.DataFrame) -> float:
     xgb_pred = state.xgb_model.predict(flat_latest)[0]
     rf_pred = state.rf_model.predict(flat_latest)[0]
 
-    # Return Average Prediction
     return float((lstm_pred + xgb_pred + rf_pred) / 3.0)
 
 def inverse_scale_return(scaled_value: float) -> float:

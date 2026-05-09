@@ -1,126 +1,61 @@
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
-import joblib
 import pandas as pd
-import numpy as np
 import os
 
+from app import model_loader
+from app.schemas import StockFeaturesRequest, PredictionResponse
+
 app = FastAPI(
-    title="Stock Prediction API (Indian Market)",
-    description="Predicts next-day Close price based on Daily Return forecasting.",
-    version="2.2.0",
+    title="Stock Prediction API - Ensemble Edition",
+    description="Predicts next-day Close price using LSTM, XGBoost, and Random Forest.",
+    version="3.0.0",
 )
-
-# ── Paths ─────────────────────────────────────────────────────────────────────
-MODEL_DIR = os.getenv("MODEL_DIR", "./models") 
-model_path = os.path.join(MODEL_DIR, "random_forest.pkl")
-scaler_path = os.path.join(MODEL_DIR, "scaler.pkl")
-
-FEATURE_COLS = ["Open", "High", "Low", "Close", "Volume", "SMA_10", "SMA_50", "Daily_Return"]
-
-model  = None
-scaler = None
-
 
 @app.on_event("startup")
 def load_artifacts():
-    global model, scaler
-
-    if os.path.exists(model_path):
-        model = joblib.load(model_path)
-        print(f"✅  Model loaded from {model_path}")
-    else:
-        print(f"⚠️   Model not found at {model_path}. Run the pipeline first.")
-
-    if os.path.exists(scaler_path):
-        scaler = joblib.load(scaler_path)
-        print(f"✅  Scaler loaded from {scaler_path}")
-    else:
-        print(f"⚠️   Scaler not found at {scaler_path}.")
-
-
-class StockFeatures(BaseModel):
-    Open:         float = Field(..., example=2800.0)
-    High:         float = Field(..., example=2850.0)
-    Low:          float = Field(..., example=2760.0)
-    Close:        float = Field(..., example=2820.0)
-    Volume:       float = Field(..., example=5_000_000)
-    SMA_10:       float | None = Field(None, example=2790.0)
-    SMA_50:       float | None = Field(None, example=2750.0)
-    Daily_Return: float | None = Field(None, example=0.005)
-
-
-class PredictionResponse(BaseModel):
-    predicted_return_percentage: float
-    predicted_close_price: float
-    currency: str
-    note: str
-
+    model_loader.load_artefacts()
 
 @app.get("/")
 def read_root():
-    return {
-        "status": "online",
-        "api_name": "Stock Prediction API (Returns Based)",
-        "message": "Welcome! Visit /docs to view the interactive documentation."
-    }
-
+    return {"status": "online", "message": "Ensemble API Online. Visit /docs"}
 
 @app.get("/health")
 def health():
-    return {
-        "model_loaded":  model  is not None,
-        "scaler_loaded": scaler is not None,
-    }
-
+    return {"ready": model_loader.is_ready()}
 
 @app.post("/predict", response_model=PredictionResponse)
-def predict_stock(features: StockFeatures):
-    if model is None:
-        raise HTTPException(status_code=503, detail="Model is unavailable.")
-    if scaler is None:
-        raise HTTPException(status_code=503, detail="Scaler is unavailable.")
+def predict_stock(features: StockFeaturesRequest):
+    if not model_loader.is_ready():
+        raise HTTPException(status_code=503, detail="Models are unavailable. Run the pipeline.")
 
-    # Fill optional technical indicators if not provided
-    sma_10       = features.SMA_10       if features.SMA_10       is not None else features.Close
-    sma_50       = features.SMA_50       if features.SMA_50       is not None else features.Close
-    daily_return = features.Daily_Return if features.Daily_Return is not None else 0.0
-
-    raw_df = pd.DataFrame([{
-        "Open":         features.Open,
-        "High":         features.High,
-        "Low":          features.Low,
-        "Close":        features.Close,
-        "Volume":       features.Volume,
-        "SMA_10":       sma_10,
-        "SMA_50":       sma_50,
-        "Daily_Return": daily_return,
-    }], columns=FEATURE_COLS)
-
-    # Scale inputs
-    scaled_data = scaler.transform(raw_df)
-    scaled_df = pd.DataFrame(scaled_data, columns=FEATURE_COLS)
-
-    # The prediction is now the scaled "Daily_Return"
-    scaled_prediction = float(model.predict(scaled_df)[0])
-
-    # ── Inverse Transform to get the real percentage return ───────────────────
-    dummy_array = np.zeros((1, len(FEATURE_COLS)))
+    # Convert API inputs to DataFrame
+    raw_df = model_loader.build_feature_frame(**features.model_dump())
+    scaled_df = model_loader.scale_features(raw_df)
     
-    # We unscale based on the Daily_Return index, not the Close index
-    return_index = FEATURE_COLS.index("Daily_Return")
-    dummy_array[0, return_index] = scaled_prediction
-    
-    inversed_array = scaler.inverse_transform(dummy_array)
-    actual_return = float(inversed_array[0, return_index])
+    # ── Fetch 13-day history so the LSTM has a 14-day sequence to read ──
+    try:
+        csv_path = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "processed_data.csv")
+        history_df = pd.read_csv(csv_path).tail(13)[model_loader.FEATURE_COLS]
+        scaled_history = pd.DataFrame(
+            model_loader.state.scaler.transform(history_df), 
+            columns=model_loader.FEATURE_COLS
+        )
+        full_seq_df = pd.concat([scaled_history, scaled_df], ignore_index=True)
+    except Exception:
+        # Fallback if no CSV exists
+        full_seq_df = scaled_df 
 
-    # ── Calculate Actual Future Price ─────────────────────────────────────────
-    # Price = Current Close * (1 + predicted percentage change)
+    # Predict using the 3-model average
+    scaled_pred = model_loader.predict_return(full_seq_df)
+    actual_return = model_loader.inverse_scale_return(scaled_pred)
     actual_price = features.Close * (1 + actual_return)
 
     return PredictionResponse(
-        predicted_return_percentage=round(actual_return * 100, 4), # e.g. 1.25%
+        predicted_return_pct=round(actual_return * 100, 4),
         predicted_close_price=round(actual_price, 2),
+        confidence_band_low=round(actual_price * 0.985, 2),
+        confidence_band_high=round(actual_price * 1.015, 2),
         currency="INR",
-        note=f"Model predicts a {round(actual_return * 100, 2)}% move from the input Close price."
+        model_version="ensemble_v1",
+        note=f"Ensemble model predicts a {round(actual_return * 100, 2)}% move."
     )
