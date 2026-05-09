@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from xgboost import XGBRegressor  # ── Swapped to XGBoost
+from xgboost import XGBRegressor  
 import joblib
 import json
 import os
@@ -38,17 +38,19 @@ def train_model(
         X, y, test_size=0.2, random_state=42, shuffle=False
     )
 
-    # ── HARDWARE MAXIMIZATION: Ryzen 7 + RTX 5050 (8GB) + 32GB RAM ──
+    # ── TUNED FOR FINANCIAL DATA (GPU Acceleration + Prevents Overfitting) ──
     model = XGBRegressor(
-        n_estimators=2000,       # Pushing 2000 trees using GPU parallelization
-        max_depth=12,            # Deep enough to catch complex market trends
-        learning_rate=0.01,      # Slow learning rate for higher accuracy
-        subsample=0.8,           # Uses 80% of data per tree to prevent overfitting
-        colsample_bytree=0.8,    # Uses 80% of features per tree to reduce bias
+        n_estimators=150,        # Reduced so it doesn't memorize data
+        max_depth=4,             # Shallower trees force the AI to look at broader trends
+        learning_rate=0.05,      # Slightly faster learning rate
+        subsample=0.8,           # Uses 80% of data per tree 
+        colsample_bytree=0.8,    # Uses 80% of features per tree
+        reg_lambda=1.5,          # L2 Regularization (penalizes extreme price guesses)
+        reg_alpha=0.1,           # L1 Regularization (ignores useless features)
         random_state=42,
-        tree_method="hist",      # Fastest algorithm for building trees
+        tree_method="hist",      
         device="cuda",           # 🔥 Routes math to RTX 5050 GPU
-        n_jobs=-1                # 🔥 Routes data processing to Ryzen 7 CPU threads
+        n_jobs=-1                # 🔥 Routes data processing to Ryzen 7 CPU
     )
     model.fit(X_train, y_train)
 
@@ -86,6 +88,6 @@ def train_model(
 if __name__ == "__main__":
     INPUT_FILE    = os.path.join(os.path.dirname(__file__), "..", "data", "processed", "processed_data.csv")
     MODEL_OUTPUT  = os.path.join(os.path.dirname(__file__), "..", "models", "random_forest.pkl")
-    METRICS_PATH  = os.path.join(os.path.dirname(__file__), "..", "models", "metrics_new.json") # Updated to output to metrics_new so evaluate.py doesn't overwrite it
+    METRICS_PATH  = os.path.join(os.path.dirname(__file__), "..", "models", "metrics_new.json") 
 
     train_model(INPUT_FILE, MODEL_OUTPUT, METRICS_PATH)
