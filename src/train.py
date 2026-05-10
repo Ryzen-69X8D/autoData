@@ -14,7 +14,7 @@ Key design decisions
 """
 
 from __future__ import annotations
-
+from sklearn.base import clone
 import json
 import os
 import warnings
@@ -68,9 +68,9 @@ def _oof_predictions(
     tscv = TimeSeriesSplit(n_splits=n_splits)
     oof  = np.zeros(len(X))
     for train_idx, val_idx in tscv.split(X):
-        cloned_model = clone(model)
-        clone.fit(X[train_idx], y[train_idx])
-        oof[val_idx] = clone.predict(X[val_idx])
+        cloned_model = clone(model)           # ✅ clone() now resolves
+        cloned_model.fit(X[train_idx], y[train_idx])   # ✅ was clone.fit(...)
+        oof[val_idx] = cloned_model.predict(X[val_idx]) # ✅ was clone.predict(...)
     return oof
 
 
