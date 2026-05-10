@@ -68,7 +68,7 @@ def _oof_predictions(
     tscv = TimeSeriesSplit(n_splits=n_splits)
     oof  = np.zeros(len(X))
     for train_idx, val_idx in tscv.split(X):
-        clone = joblib.loads(joblib.dumps(model))   # deep copy
+        cloned_model = clone(model)
         clone.fit(X[train_idx], y[train_idx])
         oof[val_idx] = clone.predict(X[val_idx])
     return oof
