@@ -1,7 +1,7 @@
 """
 train.py
 =========
-Trains a stacking ensemble (XGBoost + LightGBM + RandomForest)
+Trains a stacking ensemble (XGBoost + RandomForest + ExtraTrees)
 on the pre-processed NIFTY 50 data.
 
 Key design decisions
@@ -21,6 +21,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import joblib
+from sklearn.base import clone                          # ← FIX: use sklearn clone
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import RandomForestRegressor, ExtraTreesRegressor
@@ -55,8 +56,20 @@ class WeightedEnsemble:
         return preds @ w
 
 
+class StackedEnsemble:
+    """Full stacking pipeline: base models → meta Ridge → prediction."""
+
+    def __init__(self, base_models, meta_model):
+        self.base_models = base_models
+        self.meta_model  = meta_model
+
+    def predict(self, X):
+        level1 = np.column_stack([m.predict(X) for m in self.base_models])
+        return self.meta_model.predict(level1)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Out-of-fold stacking helper
+# Out-of-fold stacking helper  (FIXED: use sklearn.base.clone)
 # ─────────────────────────────────────────────────────────────────────────────
 def _oof_predictions(
     model,
@@ -68,9 +81,9 @@ def _oof_predictions(
     tscv = TimeSeriesSplit(n_splits=n_splits)
     oof  = np.zeros(len(X))
     for train_idx, val_idx in tscv.split(X):
-        clone = joblib.loads(joblib.dumps(model))   # deep copy
-        clone.fit(X[train_idx], y[train_idx])
-        oof[val_idx] = clone.predict(X[val_idx])
+        cloned = clone(model)                          # ← FIX: was joblib.loads(joblib.dumps(model))
+        cloned.fit(X[train_idx], y[train_idx])
+        oof[val_idx] = cloned.predict(X[val_idx])
     return oof
 
 
@@ -121,32 +134,33 @@ def train_model(
     # ── XGBoost ──────────────────────────────────────────────────────────────
     print("   Training XGBoost …")
     xgb_model = xgb.XGBRegressor(
-        n_estimators       = 2000,
-        learning_rate      = 0.015,
-        max_depth          = 6,
-        subsample          = 0.80,
-        colsample_bytree   = 0.80,
-        colsample_bylevel  = 0.80,
-        min_child_weight   = 5,
-        gamma              = 0.05,
-        reg_alpha          = 0.10,
-        reg_lambda         = 1.50,
-        random_state       = 42,
-        n_jobs             = -1,
-        tree_method        = "hist",
+        n_estimators          = 2000,
+        learning_rate         = 0.015,
+        max_depth             = 6,
+        subsample             = 0.80,
+        colsample_bytree      = 0.80,
+        colsample_bylevel     = 0.80,
+        min_child_weight      = 5,
+        gamma                 = 0.05,
+        reg_alpha             = 0.10,
+        reg_lambda            = 1.50,
+        random_state          = 42,
+        n_jobs                = -1,
+        tree_method           = "hist",
         early_stopping_rounds = 75,
-        eval_metric        = "rmse",
+        eval_metric           = "rmse",
     )
     xgb_model.fit(
         X_train, y_train,
-        eval_set           = [(X_test, y_test)],
-        verbose            = False,
+        eval_set  = [(X_test, y_test)],
+        verbose   = False,
     )
     xgb_rmse = float(np.sqrt(mean_squared_error(y_test, xgb_model.predict(X_test))))
     print(f"      XGBoost test RMSE : {xgb_rmse:.6f}")
 
     # ── LightGBM ─────────────────────────────────────────────────────────────
     lgb_model = None
+    lgb_rmse  = None
     if _HAS_LGB:
         print("   Training LightGBM …")
         lgb_model = lgb.LGBMRegressor(
@@ -166,8 +180,8 @@ def train_model(
         callbacks = [lgb.early_stopping(75, verbose=False), lgb.log_evaluation(-1)]
         lgb_model.fit(
             X_train, y_train,
-            eval_set   = [(X_test, y_test)],
-            callbacks  = callbacks,
+            eval_set  = [(X_test, y_test)],
+            callbacks = callbacks,
         )
         lgb_rmse = float(np.sqrt(mean_squared_error(y_test, lgb_model.predict(X_test))))
         print(f"      LightGBM test RMSE: {lgb_rmse:.6f}")
@@ -212,8 +226,46 @@ def train_model(
         base_names.append("lgb")
 
     # Out-of-fold predictions on TRAINING set
+    # NOTE: XGBoost with early_stopping cannot be cloned for OOF; use a
+    #       fresh XGBRegressor without early_stopping for the OOF step.
+    oof_base_models = [
+        xgb.XGBRegressor(
+            n_estimators   = int(xgb_model.best_iteration * 1.1) if hasattr(xgb_model, "best_iteration") and xgb_model.best_iteration else 500,
+            learning_rate  = 0.015,
+            max_depth      = 6,
+            subsample      = 0.80,
+            colsample_bytree = 0.80,
+            min_child_weight = 5,
+            gamma          = 0.05,
+            reg_alpha      = 0.10,
+            reg_lambda     = 1.50,
+            random_state   = 42,
+            n_jobs         = -1,
+            tree_method    = "hist",
+        ),
+        rf_model,
+        et_model,
+    ]
+    if lgb_model is not None:
+        oof_base_models.append(
+            lgb.LGBMRegressor(
+                n_estimators     = lgb_model.best_iteration_ if hasattr(lgb_model, "best_iteration_") and lgb_model.best_iteration_ else 500,
+                learning_rate    = 0.015,
+                max_depth        = 6,
+                num_leaves       = 50,
+                subsample        = 0.80,
+                colsample_bytree = 0.80,
+                min_child_samples= 20,
+                reg_alpha        = 0.10,
+                reg_lambda       = 1.50,
+                random_state     = 42,
+                n_jobs           = -1,
+                verbose          = -1,
+            )
+        )
+
     oof_preds = np.column_stack([
-        _oof_predictions(m, X_train, y_train) for m in base_models
+        _oof_predictions(m, X_train, y_train) for m in oof_base_models
     ])
 
     # Test predictions from fully-trained base models
@@ -224,8 +276,10 @@ def train_model(
     # Ridge meta-learner (fits on OOF, predicts on test_preds)
     meta = Ridge(alpha=1.0, fit_intercept=True)
     meta.fit(oof_preds, y_train)
-    meta_weights = meta.coef_ / meta.coef_.sum()   # normalised weights
-    meta_weights = np.clip(meta_weights, 0, None)  # non-negative
+
+    # Normalise weights to be non-negative and sum to 1
+    raw_weights  = meta.coef_
+    meta_weights = np.clip(raw_weights, 0, None)
     if meta_weights.sum() == 0:
         meta_weights = np.ones(len(base_models)) / len(base_models)
     else:
@@ -234,41 +288,25 @@ def train_model(
     print(f"   Meta-learner weights: "
           + ", ".join(f"{n}={w:.3f}" for n, w in zip(base_names, meta_weights)))
 
-    # ── Final ensemble ────────────────────────────────────────────────────────
-    ensemble = WeightedEnsemble(models=base_models, weights=meta_weights.tolist())
-
-    # ── Evaluate ensemble ─────────────────────────────────────────────────────
-    y_pred = meta.predict(test_preds)   # stacked prediction
+    # ── Evaluate stacked ensemble ─────────────────────────────────────────────
+    y_pred = meta.predict(test_preds)
     rmse   = float(np.sqrt(mean_squared_error(y_test, y_pred)))
     mae    = float(mean_absolute_error(y_test, y_pred))
     r2     = float(r2_score(y_test, y_pred))
 
-    # Attach the meta-learner to the ensemble for prediction
-    # We wrap everything so that ensemble.predict(X) goes through the full stack
-    class StackedEnsemble:
-        """Full stacking pipeline: base models → meta Ridge → prediction."""
-        def __init__(self, base_models, meta_model):
-            self.base_models = base_models
-            self.meta_model  = meta_model
-
-        def predict(self, X):
-            level1 = np.column_stack([m.predict(X) for m in self.base_models])
-            return self.meta_model.predict(level1)
-
+    # ── Build final stacked ensemble ──────────────────────────────────────────
     stacked = StackedEnsemble(base_models=base_models, meta_model=meta)
 
     print(f"\n✅  Stacked Ensemble → RMSE: {rmse:.6f} | MAE: {mae:.6f} | R²: {r2:.4f}")
-    print(f"   (XGB: {xgb_rmse:.4f}, RF: {rf_rmse:.4f}, ET: {et_rmse:.4f}"
-          + (f", LGB: {lgb_rmse:.4f}" if lgb_model else "") + ")")
+    suffix = f", LGB: {lgb_rmse:.4f}" if lgb_rmse is not None else ""
+    print(f"   (XGB: {xgb_rmse:.4f}, RF: {rf_rmse:.4f}, ET: {et_rmse:.4f}{suffix})")
 
     # ── Save model ───────────────────────────────────────────────────────────
-    # Use the path as given; replace .pt with .pkl if needed
     save_path = model_output_path.replace(".pt", ".pkl")
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
     joblib.dump(stacked, save_path)
     print(f"✅  Model saved → {save_path}")
 
-    # Also write to the exact path requested (if different)
     if save_path != model_output_path:
         joblib.dump(stacked, model_output_path)
 
