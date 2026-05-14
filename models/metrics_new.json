@@ -1,7 +1,7 @@
 {
-  "rmse": 0.040447256073823455,
-  "mae": 0.02838665940729104,
-  "r2": 0.02419133129861395,
+  "rmse": 0.04101872736977584,
+  "mae": 0.027702742784598427,
+  "r2": -0.0035774786871134445,
   "train_samples": 953,
   "test_samples": 239,
   "features": [
@@ -10,11 +10,41 @@
     "Low",
     "Close",
     "Volume",
+    "SMA_5",
     "SMA_10",
+    "SMA_20",
     "SMA_50",
+    "EMA_9",
+    "EMA_21",
     "Daily_Return",
+    "Return_2d",
+    "Return_5d",
+    "Return_10d",
     "MACD",
     "MACD_Signal",
-    "RSI_14"
-  ]
+    "MACD_Hist",
+    "RSI_14",
+    "BB_width",
+    "BB_pct",
+    "ATR_14",
+    "Volatility_5",
+    "Volatility_10",
+    "Volume_SMA_10",
+    "Volume_ratio",
+    "High_Low_ratio",
+    "Open_Close_ratio",
+    "Day_of_week",
+    "Month"
+  ],
+  "n_features": 30,
+  "base_models": [
+    "xgb",
+    "rf",
+    "et"
+  ],
+  "meta_weights": {
+    "xgb": 0.0,
+    "rf": 0.44899402136250216,
+    "et": 0.5510059786374979
+  }
 }

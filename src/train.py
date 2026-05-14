@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import warnings
 import numpy as np
 import pandas as pd
@@ -29,6 +30,9 @@ from sklearn.linear_model import Ridge
 import xgboost as xgb
 
 warnings.filterwarnings("ignore")
+
+if __name__ == "__main__":
+    sys.modules.setdefault("train", sys.modules[__name__])
 
 try:
     import lightgbm as lgb
@@ -66,6 +70,11 @@ class StackedEnsemble:
     def predict(self, X):
         level1 = np.column_stack([m.predict(X) for m in self.base_models])
         return self.meta_model.predict(level1)
+
+
+if __name__ == "__main__":
+    WeightedEnsemble.__module__ = "train"
+    StackedEnsemble.__module__ = "train"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
