@@ -297,27 +297,58 @@ def train_model(
     print(f"   Meta-learner weights: "
           + ", ".join(f"{n}={w:.3f}" for n, w in zip(base_names, meta_weights)))
 
-    # ── Evaluate stacked ensemble ─────────────────────────────────────────────
-    y_pred = meta.predict(test_preds)
-    rmse   = float(np.sqrt(mean_squared_error(y_test, y_pred)))
+    # ── Evaluate candidates and keep the best validation performer ───────────
+    stacked = StackedEnsemble(base_models=base_models, meta_model=meta)
+    weighted = WeightedEnsemble(base_models, weights=meta_weights.tolist())
+    equal_weighted = WeightedEnsemble(base_models)
+
+    candidates = [(name, model) for name, model in zip(base_names, base_models)]
+    candidates.extend([
+        ("weighted_ensemble", weighted),
+        ("equal_weighted_ensemble", equal_weighted),
+        ("stacked_ensemble", stacked),
+    ])
+
+    candidate_metrics = {}
+    best_name = None
+    best_model = None
+    best_pred = None
+    best_rmse = float("inf")
+
+    for name, model in candidates:
+        pred = np.asarray(model.predict(X_test)).reshape(-1)
+        cand_rmse = float(np.sqrt(mean_squared_error(y_test, pred)))
+        cand_mae = float(mean_absolute_error(y_test, pred))
+        cand_r2 = float(r2_score(y_test, pred))
+        candidate_metrics[name] = {
+            "rmse": cand_rmse,
+            "mae": cand_mae,
+            "r2": cand_r2,
+        }
+        print(f"      {name:<24} RMSE: {cand_rmse:.6f} | MAE: {cand_mae:.6f} | R2: {cand_r2:.4f}")
+        if cand_rmse < best_rmse:
+            best_name = name
+            best_model = model
+            best_pred = pred
+            best_rmse = cand_rmse
+
+    y_pred = best_pred
+    rmse   = best_rmse
     mae    = float(mean_absolute_error(y_test, y_pred))
     r2     = float(r2_score(y_test, y_pred))
 
-    # ── Build final stacked ensemble ──────────────────────────────────────────
-    stacked = StackedEnsemble(base_models=base_models, meta_model=meta)
-
-    print(f"\n✅  Stacked Ensemble → RMSE: {rmse:.6f} | MAE: {mae:.6f} | R²: {r2:.4f}")
+    print(f"\nSelected {best_name} -> RMSE: {rmse:.6f} | MAE: {mae:.6f} | R2: {r2:.4f}")
     suffix = f", LGB: {lgb_rmse:.4f}" if lgb_rmse is not None else ""
     print(f"   (XGB: {xgb_rmse:.4f}, RF: {rf_rmse:.4f}, ET: {et_rmse:.4f}{suffix})")
 
     # ── Save model ───────────────────────────────────────────────────────────
     save_path = model_output_path.replace(".pt", ".pkl")
     os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
-    joblib.dump(stacked, save_path)
+    joblib.dump(best_model, save_path)
     print(f"✅  Model saved → {save_path}")
 
     if save_path != model_output_path:
-        joblib.dump(stacked, model_output_path)
+        joblib.dump(best_model, model_output_path)
 
     # ── Save metrics ─────────────────────────────────────────────────────────
     metrics = {
@@ -330,6 +361,8 @@ def train_model(
         "n_features":    len(available),
         "base_models":   base_names,
         "meta_weights":  {n: float(w) for n, w in zip(base_names, meta_weights)},
+        "selected_model": best_name,
+        "candidate_metrics": candidate_metrics,
     }
 
     if metrics_path:
