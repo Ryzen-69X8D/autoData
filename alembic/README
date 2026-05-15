@@ -1,0 +1,7 @@
+Alembic migration environment for the autoData database schema.
+
+Create a revision with:
+    alembic revision --autogenerate -m "describe change"
+
+Apply migrations with:
+    alembic upgrade head

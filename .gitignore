@@ -9,6 +9,7 @@ venv/
 logs/
 airflow-webserver.pid
 airflow.db
+autodata.db
 airflow.cfg
 standalone_admin_password.txt
 

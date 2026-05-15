@@ -95,19 +95,18 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # Share the models directory so FastAPI sees newly deployed models
-      - ./models:/opt/airflow/models
-      - ./data:/opt/airflow/data      # <--- ALSO ADDED THIS so FastAPI can read historical data for the LSTM
+      - ./models:/app/models
+      - ./data:/app/data
     environment:
-      MODEL_PATH:  /opt/airflow/models/random_forest.pkl
-      SCALER_PATH: /opt/airflow/models/scaler.pkl
-    command: >
-      uvicorn app.main:app
-        --host 0.0.0.0
-        --port 8000
-        --reload
+      DATABASE_URL: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      JWT_SECRET: local-docker-secret-change-me
+      BACKEND_CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000
+      MODEL_DIR: /app/models/prod
+      RAW_DATA_PATH: /app/data/raw/stock_data.csv
+      PROCESSED_DATA_PATH: /app/data/processed/processed_data.csv
+      AUTO_CREATE_TABLES: "true"
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"]
       interval: 30s
       timeout:  10s
       retries:  3
